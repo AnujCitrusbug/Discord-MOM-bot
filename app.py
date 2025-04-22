@@ -15,7 +15,7 @@ DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 TARGET_CHANNEL_IDS = os.getenv("CHANNELS_IDS").split(",")
 
 # Google Docs ID (optional, leave None to create a new doc)
-GOOGLE_DOC_ID = '1N2bM04LHlZM-XUTCbEpdk4lNeGHKrNrueg6EMXeWDrs'
+GOOGLE_DOC_ID = os.getenv("GOOGLE_DOC_ID")
 
 # Google Drive configuration
 SERVICE_ACCOUNT_INFO = {
