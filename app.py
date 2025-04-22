@@ -5,8 +5,12 @@ import json  # Import the json library
 import re  # Add this line
 import os
 from dotenv import load_dotenv
+import streamlit as st
 
 load_dotenv()
+
+st.set_page_config(page_title="MOM-Bot", layout="centered")
+st.title("🤖 MOM-Bot-Running")
 
 # Replace with your bot token
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
