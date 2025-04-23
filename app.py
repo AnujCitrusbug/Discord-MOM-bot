@@ -1,27 +1,22 @@
 import discord
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-import json  # Import the json library
-import re  # Add this line
+import json
+import re
 import os
 from dotenv import load_dotenv
 import streamlit as st
+from collections import deque
 
 load_dotenv()
 
 st.set_page_config(page_title="MOM-Bot", layout="centered")
 st.title("🤖 MOM-Bot-Running")
 
-# Replace with your bot token
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-
-# Replace with the IDs of the Discord channels you want to monitor
 TARGET_CHANNEL_IDS = os.getenv("CHANNELS_IDS").split(",")
-
-# Google Docs ID (optional, leave None to create a new doc)
 GOOGLE_DOC_ID = os.getenv("GOOGLE_DOC_ID")
 
-# Google Drive configuration
 SERVICE_ACCOUNT_INFO = {
     "type": os.getenv("ACCOUNT_TYPE"),
     "project_id": os.getenv("PROJECT_ID"),
@@ -38,24 +33,27 @@ SERVICE_ACCOUNT_INFO = {
 with open("./credentials.json", "w") as e:
     e.write(json.dumps(SERVICE_ACCOUNT_INFO))
 
-# Define the scopes needed for Google Docs and Drive API
 SCOPES = [
     'https://www.googleapis.com/auth/documents',
     'https://www.googleapis.com/auth/drive.file'
 ]
 
-# Authenticate with Google Sheets API using the embedded info
 creds = Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=SCOPES)
 service = build('docs', 'v1', credentials=creds)
 drive_service = build('drive', 'v3', credentials=creds)
+
+# Deduplication: message ID cache
+recent_messages = deque(maxlen=100)
 
 class MyClient(discord.Client):
     async def on_ready(self):
         print(f'Logged in as {self.user}')
 
     async def on_message(self, message):
-        if message.author == self.user:
+        if message.author == self.user or message.id in recent_messages:
             return
+
+        recent_messages.append(message.id)
 
         lower_content = message.content.lower()
         keywords = ["mom", "demo", "internal demo"]
@@ -72,7 +70,7 @@ class MyClient(discord.Client):
                 {
                     'insertText': {
                         'location': {
-                            'index': 1  # Append to the end
+                            'index': 1
                         },
                         'text': f"{content}\n\n"
                     }
@@ -91,8 +89,13 @@ class MyClient(discord.Client):
         except Exception as e:
             print(f"An error occurred while updating the Google Doc: {e}")
 
-intents = discord.Intents.default()
-intents.message_content = True
+# Prevent multiple bot runs using session state
+if "bot_started" not in st.session_state:
+    st.session_state["bot_started"] = False
 
-client = MyClient(intents=intents)
-client.run(DISCORD_BOT_TOKEN)
+if not st.session_state["bot_started"]:
+    st.session_state["bot_started"] = True
+    intents = discord.Intents.default()
+    intents.message_content = True
+    client = MyClient(intents=intents)
+    client.run(DISCORD_BOT_TOKEN)
