@@ -7,9 +7,12 @@ import os
 from dotenv import load_dotenv
 import streamlit as st
 from collections import deque
+import threading
 
+# Load environment variables
 load_dotenv()
 
+# Streamlit UI setup
 st.set_page_config(page_title="MOM-Bot", layout="centered")
 st.title("🤖 MOM-Bot-Running")
 
@@ -30,9 +33,8 @@ SERVICE_ACCOUNT_INFO = {
     "client_x509_cert_url": os.getenv("CLIENT_X509_CERT_URL"),
     "universe_domain": os.getenv("UNIVERSE_DOMAIN"),
 }
-with open("./credentials.json", "w") as e:
-    e.write(json.dumps(SERVICE_ACCOUNT_INFO))
 
+# Authenticate with Google API
 SCOPES = [
     'https://www.googleapis.com/auth/documents',
     'https://www.googleapis.com/auth/drive.file'
@@ -42,9 +44,10 @@ creds = Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=SCOPE
 service = build('docs', 'v1', credentials=creds)
 drive_service = build('drive', 'v3', credentials=creds)
 
-# Deduplication: message ID cache
+# Store recent messages to prevent duplication
 recent_messages = deque(maxlen=100)
 
+# Discord bot client
 class MyClient(discord.Client):
     async def on_ready(self):
         print(f'Logged in as {self.user}')
@@ -53,6 +56,7 @@ class MyClient(discord.Client):
         if message.author == self.user or message.id in recent_messages:
             return
 
+        # Deduplicate
         recent_messages.append(message.id)
 
         lower_content = message.content.lower()
@@ -60,7 +64,7 @@ class MyClient(discord.Client):
 
         if any(keyword in lower_content for keyword in keywords):
             await self.append_to_google_doc(message.content)
-            print(f"Appended message containing MOM/demo: {message.content}")
+            print(f"[MOM] Appended message: {message.content}")
 
     async def append_to_google_doc(self, content):
         global GOOGLE_DOC_ID
@@ -77,25 +81,34 @@ class MyClient(discord.Client):
                 }
             ]
         }
+
         try:
             if GOOGLE_DOC_ID:
-                result = service.documents().batchUpdate(documentId=GOOGLE_DOC_ID, body=body).execute()
+                service.documents().batchUpdate(documentId=GOOGLE_DOC_ID, body=body).execute()
             else:
                 document = {'title': 'Meeting Minutes'}
                 created_document = service.documents().create(body=document).execute()
                 GOOGLE_DOC_ID = created_document.get('documentId')
-                print(f"Created new Google Doc with ID: {GOOGLE_DOC_ID}")
-                result = service.documents().batchUpdate(documentId=GOOGLE_DOC_ID, body=body).execute()
+                print(f"[DOC] Created new doc with ID: {GOOGLE_DOC_ID}")
+                service.documents().batchUpdate(documentId=GOOGLE_DOC_ID, body=body).execute()
         except Exception as e:
-            print(f"An error occurred while updating the Google Doc: {e}")
+            print(f"[ERROR] Google Doc update failed: {e}")
 
-# Prevent multiple bot runs using session state
+# Function to run bot in background thread
+def start_discord_bot():
+    intents = discord.Intents.default()
+    intents.message_content = True
+    client = MyClient(intents=intents)
+    client.run(DISCORD_BOT_TOKEN)
+
+# Start bot only once per Streamlit session
 if "bot_started" not in st.session_state:
     st.session_state["bot_started"] = False
 
 if not st.session_state["bot_started"]:
     st.session_state["bot_started"] = True
-    intents = discord.Intents.default()
-    intents.message_content = True
-    client = MyClient(intents=intents)
-    client.run(DISCORD_BOT_TOKEN)
+    bot_thread = threading.Thread(target=start_discord_bot, name="DiscordBotThread", daemon=True)
+    bot_thread.start()
+    st.success("✅ Discord bot started in background thread!")
+else:
+    st.info("Bot is already running.")
